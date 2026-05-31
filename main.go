@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -27,35 +28,36 @@ func main() {
 func getLinesChannel(f io.ReadCloser) <-chan string {
 	strChan := make(chan string)
 	go func() {
+		defer f.Close()
+		defer close(strChan)
+
 		var currentLine string
 		// suppose we only have a way to read 8 byte
 		for {
 			buffer := make([]byte, 8)
-			_, err := f.Read(buffer)
+			n, err := f.Read(buffer)
 
-			if err == io.EOF {
-				strChan <- currentLine
-				f.Close()
-				close(strChan)
-				os.Exit(0)
-			}
 			if err != nil {
+				if currentLine != "" {
+					strChan <- currentLine
+				}
+				if errors.Is(err, io.EOF) {
+					break
+
+				}
 				log.Fatalf("Failed reading file bytes: %v", err)
-
+				return
 			}
 
-			bufStr := string(buffer)
+			bufStr := string(buffer[:n])
 			parts := strings.Split(bufStr, "\n")
-
-			if len(parts) > 1 {
-				// that would mean we've hit new line
-				currentLine += parts[0]
-				strChan <- currentLine
-				currentLine = parts[1]
-				continue
+			for i := 0; i < len(parts)-1; i++ {
+				strChan <- (currentLine + parts[i])
+				currentLine = ""
 			}
+
 			// if no new line we'll concatinate the whole buffer
-			currentLine += bufStr
+			currentLine += parts[len(parts)-1]
 		}
 		// this is done to declare and call the func
 		// at the same place
