@@ -1,28 +1,14 @@
-package main
+package internals
 
 import (
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"strings"
 )
 
-func main() {
-	file, err := os.Open("./message.txt")
-	if err != nil {
-		log.Fatalf("Failed reading file error: %v", err)
-	}
-	lineChan := getLinesChannel(file)
-
-	for line := range lineChan {
-		fmt.Printf("read: %s\n", line)
-	}
-
-}
-
-func getLinesChannel(f io.ReadCloser) <-chan string {
+func GetLinesChannel(f io.ReadCloser) <-chan string {
 	strChan := make(chan string)
 	go func() {
 		defer f.Close()
