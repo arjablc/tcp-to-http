@@ -15,11 +15,8 @@ func main() {
 		log.Fatalf("Failed reading file error: %v", err)
 	}
 	lineChan := getLinesChannel(file)
-	for {
-		line, ok := <-lineChan
-		if !ok {
-			fmt.Println("Channel cloased")
-		}
+
+	for line := range lineChan {
 		fmt.Printf("read: %s\n", line)
 	}
 
@@ -36,7 +33,6 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 		for {
 			buffer := make([]byte, 8)
 			n, err := f.Read(buffer)
-
 			if err != nil {
 				if currentLine != "" {
 					strChan <- currentLine
