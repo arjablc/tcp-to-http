@@ -31,7 +31,7 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 		defer f.Close()
 		defer close(strChan)
 
-		var currentLine string
+		currentLine := ""
 		// suppose we only have a way to read 8 byte
 		for {
 			buffer := make([]byte, 8)
@@ -52,10 +52,10 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 			bufStr := string(buffer[:n])
 			parts := strings.Split(bufStr, "\n")
 			for i := 0; i < len(parts)-1; i++ {
-				strChan <- (currentLine + parts[i])
+				line := fmt.Sprintf("%s%s", currentLine, parts[i])
+				strChan <- line
 				currentLine = ""
 			}
-
 			// if no new line we'll concatinate the whole buffer
 			currentLine += parts[len(parts)-1]
 		}
