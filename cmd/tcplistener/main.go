@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 
-	"github.com/arjablc/tcp-to-http/internals"
+	"github.com/arjablc/tcp-to-http/internal/readers"
 )
 
 func main() {
