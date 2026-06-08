@@ -45,7 +45,7 @@ func parseReqLine(rawBytes []byte) (*RequestLine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return reqLine, err
+	return reqLine, nil
 }
 
 func reqLineFromString(in string) (*RequestLine, error) {
@@ -56,7 +56,7 @@ func reqLineFromString(in string) (*RequestLine, error) {
 	method, requestTarget, httpVersionString := splits[0], splits[1], splits[2]
 	for _, mChar := range method {
 
-		if mChar < 'A' || mChar < 'Z' {
+		if mChar < 'A' || mChar > 'Z' {
 			return nil, errors.New("Invalid method verb")
 		}
 	}
