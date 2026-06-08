@@ -1,6 +1,7 @@
 package request
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"strings"
@@ -16,14 +17,14 @@ type RequestLine struct {
 	Method        string
 }
 
+var crlf string = "\r\n"
+
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	requestData, err := io.ReadAll(reader)
+	rawBytes, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, errors.New("Failed reading data")
 	}
-	reqString := string(requestData)
-	lines := strings.Split(reqString, "\r\n")
-	reqLine, err := parseReqLine(lines[0])
+	reqLine, err := parseReqLine(rawBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -33,24 +34,44 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	return &req, nil
 }
 
-func parseReqLine(line string) (*RequestLine, error) {
-	var reqLine RequestLine
-	splits := strings.Split(line, " ")
+func parseReqLine(rawBytes []byte) (*RequestLine, error) {
+	// you need to check if there even is a crlf or not
+	crlfIdx := bytes.Index(rawBytes, []byte(crlf))
+	if crlfIdx < 0 {
+		return nil, errors.New("Invalid format")
+	}
+	reqLineString := string(rawBytes[:crlfIdx])
+	reqLine, err := reqLineFromString(reqLineString)
+	if err != nil {
+		return nil, err
+	}
+	return reqLine, err
+}
+
+func reqLineFromString(in string) (*RequestLine, error) {
+	splits := strings.Split(in, " ")
 	if len(splits) != 3 {
 		return nil, errors.New("Invalid line")
 	}
 	method, requestTarget, httpVersionString := splits[0], splits[1], splits[2]
-	if method != strings.ToUpper(method) {
-		return nil, errors.New("Invalid method verb")
+	for _, mChar := range method {
+
+		if mChar < 'A' || mChar < 'Z' {
+			return nil, errors.New("Invalid method verb")
+		}
 	}
 
-	reqLine.Method = method
-	reqLine.RequestTarget = requestTarget
 	httpVersionSplit := strings.Split(httpVersionString, "/")
 	if len(httpVersionSplit) != 2 {
 		return nil, errors.New("Invalid http version string")
 	}
+	if httpVersionSplit[1] != "1.1" {
+		return nil, errors.New("Invalid HTTP version")
+	}
 
+	var reqLine RequestLine
+	reqLine.Method = method
+	reqLine.RequestTarget = requestTarget
 	reqLine.HttpVersion = httpVersionSplit[1]
 
 	return &reqLine, nil
