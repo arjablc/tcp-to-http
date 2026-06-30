@@ -3,6 +3,7 @@ package headers
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -21,7 +22,14 @@ const INVALID_HEADERS string = "Invalid headers"
 
 // Better API
 func (h Headers) Set(key, value string) {
-	h[key] = value
+	val, ok := h[key]
+	if !ok {
+		h[key] = value
+		return
+	}
+	val = fmt.Sprintf("%s, %s", val, value)
+	h[key] = val
+
 }
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
@@ -37,12 +45,12 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	}
 
-	headerSepIdx := bytes.Index(data, headerSep)
-	if headerSepIdx < 0 {
+	parts := bytes.SplitN(data[:crlfIdx], headerSep, 2)
+	if len(parts) < 2 {
 		return 0, false, errors.New(": not found")
 	}
-	headerKey := strings.ToLower(string(data[:headerSepIdx]))
-	headerValue := string(data[headerSepIdx+2 : crlfIdx])
+	headerKey := strings.ToLower(string(parts[0]))
+	headerValue := bytes.TrimSpace(parts[1])
 
 	// THis only checks if there are whitespaces
 	// around header
@@ -61,7 +69,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 		}
 	}
 
-	h.Set(headerKey, strings.TrimSpace(headerValue))
+	h.Set(headerKey, string(headerValue))
 	return crlfIdx + 2, false, nil
 }
 

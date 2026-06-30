@@ -71,4 +71,13 @@ func TestHeaders(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, done)
 	assert.Equal(t, 0, n)
+
+	//Test: Multiple headers with same name
+	headers = map[string]string{"host": "localhost:42069"}
+	data = []byte("Host: loli:1234\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, "localhost:42069, loli:1234", headers["host"])
+	assert.False(t, done)
 }

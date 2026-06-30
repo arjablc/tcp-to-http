@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strings"
+
+	"github.com/arjablc/tcp-to-http/internal/headers"
 )
 
 type RequestState int
@@ -13,6 +16,7 @@ type RequestState int
 const (
 	RequestStateInit RequestState = iota
 	RequestStateDone
+	RequestStateParsingHeaders
 )
 
 type RequestLine struct {
@@ -23,22 +27,33 @@ type RequestLine struct {
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	ReqState    RequestState
 }
 
-func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) parseSingle(data []byte) (int, error) {
+	log.Println("Inside Parse Single")
 	switch r.ReqState {
 	case RequestStateInit:
 		reqLine, n, err := parseReqLine(data)
 		if err != nil {
 			return 0, err
 		}
-		if n == 0 {
-			//it requires more data
-			return 0, nil
+		if reqLine != nil {
+			r.RequestLine = *reqLine
+			r.ReqState = RequestStateParsingHeaders
 		}
-		r.RequestLine = *reqLine
-		r.ReqState = RequestStateDone
+		return n, nil
+	case RequestStateParsingHeaders:
+		fmt.Println("ParseSingle: headers parsing")
+		fmt.Println("ParseSingle: data len:", len(data))
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.ReqState = RequestStateDone
+		}
 		return n, nil
 	case RequestStateDone:
 		return 0, fmt.Errorf("Trying to read data when data stream is done")
@@ -48,14 +63,35 @@ func (r *Request) parse(data []byte) (int, error) {
 
 }
 
+func (r *Request) parse(data []byte) (int, error) {
+	fmt.Println("Inside Parse Method")
+	totalBytesRead := 0
+	for r.ReqState != RequestStateDone {
+		fmt.Printf("Current request State: %v\n", r.ReqState)
+		fmt.Printf("Current totalBytesRead: %v\n", totalBytesRead)
+		n, err := r.parseSingle(data[totalBytesRead:])
+		fmt.Printf("Returning bytes from parse single: %d", n)
+
+		if n == 0 {
+			return 0, nil
+		}
+		if err != nil {
+			return n, err
+		}
+		totalBytesRead += n
+	}
+	return totalBytesRead, nil
+}
+
 var crlf string = "\r\n"
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	bytesRead := 0
 	request := Request{
+		Headers:  headers.NewHeaders(),
 		ReqState: RequestStateInit,
 	}
-	readBuffer := make([]byte, 8, 8)
+	readBuffer := make([]byte, 8)
 
 	for request.ReqState != RequestStateDone {
 		if bytesRead >= len(readBuffer) {
@@ -64,7 +100,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			readBuffer = newBuf
 		}
 		readIdx, err := reader.Read(readBuffer[bytesRead:])
+		fmt.Println("================BUFFER==================")
 		fmt.Print(string(readBuffer))
+		fmt.Println()
+		fmt.Println("================BUFFER==================")
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				request.ReqState = RequestStateDone
@@ -74,7 +113,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		}
 		// update the number of bytes read or the index of the last read byte
 		bytesRead += readIdx
+		fmt.Println("Calling parse")
 		parsedIdx, err := request.parse(readBuffer[:bytesRead])
+		fmt.Println()
+		fmt.Println(" parse Call ended")
 		if err != nil {
 			return nil, err
 		}
@@ -84,6 +126,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		copy(readBuffer, readBuffer[parsedIdx:])
 		bytesRead -= parsedIdx
 	}
+	fmt.Println("Returning request")
 	return &request, nil
 }
 
