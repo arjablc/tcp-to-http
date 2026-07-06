@@ -12,66 +12,48 @@ type Server struct {
 	listener net.Listener
 	port     int
 
-	serverOpen *atomic.Bool
+	closed *atomic.Bool
 }
 
 func (s *Server) Close() error {
-	fmt.Println("Close called")
-	s.serverOpen.Store(false)
-	err := s.listener.Close()
-	if err != nil {
-		return err
+	s.closed.Store(true)
+	if s.listener != nil {
+		err := s.listener.Close()
+		if err != nil {
+			return err
+		}
 	}
 	return nil
-
 }
 
 func (s *Server) listen() {
 	for {
-
-		fmt.Println("Listen called")
-		if !s.serverOpen.Load() {
-			log.Fatalf("Server is closed, Not listening to requests")
-
-		}
 		conn, err := s.listener.Accept()
 		if err != nil {
-			fmt.Println("Some error in connection accept", conn)
+			if s.closed.Load() {
+				return
+			}
+			log.Printf("Error Accepting Connection: %v", err)
 		}
-
 		go s.handle(conn)
-
 	}
-
 }
 
 func (s *Server) handle(conn net.Conn) {
-	fmt.Println("Handle called")
-	/*
-		HTTP/1.1 200 OK
-		Content-Type: text/plain
-		Content-Length: 13
+	defer conn.Close()
+	response := "HTTP/1.1 200 OK\r\n" +
+		"Content-Type: text/plain\r\n" +
+		"Content-Length: 13\r\n\r\n" +
+		"Hello World!\n"
 
-		Hello World!
-	*/
-	// 	writeString := `
-	// HTTP/1.1 200 OK
-	// Content-Type: text/plain
-	// Content-Length: 13
-	//
-	// Hello World!
-	// 	`
-	n, err := conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 13\r\n\r\nHello World!"))
+	_, err := conn.Write([]byte(response))
+
 	if err != nil {
-		fmt.Println("Error on connection write", err)
+		fmt.Println("Error Writing to Connection", err)
 	}
-
-	fmt.Println("Bytes written", n)
-	conn.Close()
 }
 
 func Serve(port int) (*Server, error) {
-	fmt.Println("Serve called")
 	// create a new server with the port
 	portStr := fmt.Sprintf(":%d", port)
 	fmt.Println(portStr)
@@ -81,11 +63,10 @@ func Serve(port int) (*Server, error) {
 		return nil, fmt.Errorf("Failed to start tcp, %v", err)
 	}
 	var serverRunning atomic.Bool
-	serverRunning.Store(true)
 	server := Server{
-		port:       port,
-		listener:   tcpListener,
-		serverOpen: &serverRunning,
+		port:     port,
+		listener: tcpListener,
+		closed:   &serverRunning,
 	}
 	go server.listen()
 	return &server, nil
