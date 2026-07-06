@@ -81,3 +81,57 @@ func TestHeaders(t *testing.T) {
 	assert.Equal(t, "localhost:42069, loli:1234", headers["host"])
 	assert.False(t, done)
 }
+
+func TestHeaderKeysWithDigits(t *testing.T) {
+	// RFC 7230 defines a header field-name as a token, and a token
+	// is composed of tchars which INCLUDE DIGIT. So header keys
+	// containing the digits '0' and '9' must be accepted.
+	// This currently FAILS against isValid in headers.go because
+	// the digit check is `c > '0' && c < '9'` — an off-by-one that
+	// wrongly rejects both '0' and '9'.
+
+	// Test: header key containing digit '0'
+	headers := NewHeaders()
+	data := []byte("X-Custom0: foo\r\n")
+	n, done, err := headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "foo", headers["x-custom0"])
+	assert.False(t, done)
+	assert.Equal(t, len("X-Custom0: foo\r\n"), n)
+
+	// Test: header key containing digit '9'
+	headers = NewHeaders()
+	data = []byte("X-Custom9: bar\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "bar", headers["x-custom9"])
+	assert.False(t, done)
+	assert.Equal(t, len("X-Custom9: bar\r\n"), n)
+
+	// Test: header key containing all boundary digits '0'..'9'
+	headers = NewHeaders()
+	data = []byte("X-0123456789: baz\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "baz", headers["x-0123456789"])
+	assert.False(t, done)
+	assert.Equal(t, len("X-0123456789: baz\r\n"), n)
+
+	// Test: header key that is entirely digits (still a valid token)
+	headers = NewHeaders()
+	data = []byte("0: qux\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, "qux", headers["0"])
+	assert.False(t, done)
+	assert.Equal(t, len("0: qux\r\n"), n)
+}
+
+func TestIsValidDigitBoundaries(t *testing.T) {
+	// Locks in that every decimal digit is a valid header-name character.
+	// Currently fails for '0' and '9' because of the off-by-one in
+	// headers.go isValid: `c > '0' && c < '9'`.
+	for r := '0'; r <= '9'; r++ {
+		assert.True(t, isValid(r), "isValid should accept digit %q", string(r))
+	}
+}

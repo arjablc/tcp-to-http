@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"strconv"
 	"strings"
 
 	"github.com/arjablc/tcp-to-http/internal/headers"
@@ -13,10 +13,13 @@ import (
 
 type RequestState int
 
+const contentLength = "Content-Length"
+
 const (
 	RequestStateInit RequestState = iota
-	RequestStateDone
 	RequestStateParsingHeaders
+	RequestStateBodyParsing
+	RequestStateDone
 )
 
 type RequestLine struct {
@@ -28,11 +31,13 @@ type RequestLine struct {
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
-	ReqState    RequestState
+	Body        []byte
+
+	ReqState       RequestState
+	bodyLengthRead int
 }
 
 func (r *Request) parseSingle(data []byte) (int, error) {
-	log.Println("Inside Parse Single")
 	switch r.ReqState {
 	case RequestStateInit:
 		reqLine, n, err := parseReqLine(data)
@@ -45,16 +50,48 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 		}
 		return n, nil
 	case RequestStateParsingHeaders:
-		fmt.Println("ParseSingle: headers parsing")
-		fmt.Println("ParseSingle: data len:", len(data))
 		n, done, err := r.Headers.Parse(data)
 		if err != nil {
 			return 0, err
 		}
 		if done {
-			r.ReqState = RequestStateDone
+			r.ReqState = RequestStateBodyParsing
 		}
 		return n, nil
+
+	case RequestStateBodyParsing:
+		contentLength := r.Headers.Get(contentLength)
+		if len(contentLength) == 0 {
+			r.ReqState = RequestStateDone
+			return len(data), nil
+		}
+		contentLengthI, err := strconv.Atoi(contentLength)
+		if err != nil {
+			return 0, err
+		}
+		r.Body = append(r.Body, data...)
+		r.bodyLengthRead += len(data)
+
+		//NOTE: Handling only the more than because
+		// when less than the contentlength we might be
+		// waiting on more data to come from the stream
+
+		// FIX: wrong because the state of the bodyread is not saved
+		// this assumes body parsing happens on sinlgle parse call
+
+		// if len(r.Body) > contentLengthI {
+		// 	return 0, errors.New("Content Lenght Mismatch")
+		// }
+
+		if r.bodyLengthRead > contentLengthI {
+			return 0, errors.New("Content Length Mismatch")
+		}
+
+		if len(r.Body) == contentLengthI {
+			r.ReqState = RequestStateDone
+		}
+		return len(data), nil
+
 	case RequestStateDone:
 		return 0, fmt.Errorf("Trying to read data when data stream is done")
 	default:
@@ -64,22 +101,19 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-	fmt.Println("Inside Parse Method")
 	totalBytesRead := 0
 	for r.ReqState != RequestStateDone {
-		fmt.Printf("Current request State: %v\n", r.ReqState)
-		fmt.Printf("Current totalBytesRead: %v\n", totalBytesRead)
 		n, err := r.parseSingle(data[totalBytesRead:])
-		fmt.Printf("Returning bytes from parse single: %d", n)
-
-		if n == 0 {
-			return 0, nil
-		}
 		if err != nil {
 			return n, err
 		}
+		if n == 0 {
+			return totalBytesRead, nil
+		}
+
 		totalBytesRead += n
 	}
+
 	return totalBytesRead, nil
 }
 
@@ -100,23 +134,19 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			readBuffer = newBuf
 		}
 		readIdx, err := reader.Read(readBuffer[bytesRead:])
-		fmt.Println("================BUFFER==================")
-		fmt.Print(string(readBuffer))
-		fmt.Println()
-		fmt.Println("================BUFFER==================")
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				request.ReqState = RequestStateDone
-				break
+				if request.ReqState == RequestStateBodyParsing {
+					return nil, fmt.Errorf("Stream EOF but Parser not done")
+				}
+
+				return &request, nil
 			}
 			return nil, err
 		}
 		// update the number of bytes read or the index of the last read byte
 		bytesRead += readIdx
-		fmt.Println("Calling parse")
 		parsedIdx, err := request.parse(readBuffer[:bytesRead])
-		fmt.Println()
-		fmt.Println(" parse Call ended")
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +156,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		copy(readBuffer, readBuffer[parsedIdx:])
 		bytesRead -= parsedIdx
 	}
-	fmt.Println("Returning request")
 	return &request, nil
 }
 

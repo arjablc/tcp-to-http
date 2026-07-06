@@ -29,11 +29,18 @@ func (h Headers) Set(key, value string) {
 	}
 	val = fmt.Sprintf("%s, %s", val, value)
 	h[key] = val
+}
 
+func (h Headers) Get(key string) string {
+	normalizedKey := strings.ToLower(key)
+	value, ok := h[normalizedKey]
+	if !ok {
+		return ""
+	}
+	return value
 }
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
-
 	crlfIdx := bytes.Index(data, []byte(crlf))
 	if crlfIdx < 0 {
 		return 0, false, nil
@@ -49,6 +56,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	if len(parts) < 2 {
 		return 0, false, errors.New(": not found")
 	}
+
 	headerKey := strings.ToLower(string(parts[0]))
 	headerValue := bytes.TrimSpace(parts[1])
 
@@ -80,7 +88,7 @@ func isValid(c rune) bool {
 	if c >= 'A' && c <= 'Z' {
 		return true
 	}
-	if c > '0' && c < '9' {
+	if c >= '0' && c <= '9' {
 		return true
 	}
 	return slices.Contains(validSpecialCharacters, c)
