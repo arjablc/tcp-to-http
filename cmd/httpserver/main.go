@@ -1,10 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/arjablc/tcp-to-http/internal/headers"
@@ -18,6 +22,53 @@ const port = 42069
 func requestHandler(w *response.Writer, req *request.Request) {
 	log.Println("Inside handler")
 	log.Println("Request Targer", req.RequestLine.RequestTarget)
+	if after, ok := strings.CutPrefix(req.RequestLine.RequestTarget, "/httpbin"); ok {
+		log.Println("Http bin branch hit")
+		forwardTarget := after
+		url := fmt.Sprintf("https://httpbin.org/%s", forwardTarget)
+		res, err := http.Get(url)
+		if err != nil {
+			writeResp(w, response.StatusInternal, "Failed to forward request")
+		}
+		buff := make([]byte, 1024)
+
+		headers := headers.NewHeaders()
+		headers.Set("Connection", "close")
+		headers.Set("Transfer-Encoding", "chunked")
+		err = w.WriteStatusLine(200)
+		if err != nil {
+			fmt.Println(err)
+		}
+		err = w.WriteHeaders(headers)
+		if err != nil {
+			fmt.Println(err)
+		}
+		readIdx := 0
+		for {
+			n, err := res.Body.Read(buff)
+			fmt.Println("Incoming Chunk Size Reads:", n)
+			fmt.Println("-----------Data:-----------")
+			fmt.Print(string(buff))
+			fmt.Println("\n----------------------")
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					_, err = w.WriteChunkedBodyDone()
+					if err != nil {
+						fmt.Println(err)
+					}
+					return
+				}
+				fmt.Println(err)
+				return
+			}
+			n, err = w.WriteChunkedBody(buff)
+			if err != nil {
+				fmt.Println(err)
+			}
+			readIdx += n
+		}
+
+	}
 
 	switch req.RequestLine.RequestTarget {
 	case "/yourproblem":
