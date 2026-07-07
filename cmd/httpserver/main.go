@@ -20,10 +20,7 @@ import (
 const port = 42069
 
 func requestHandler(w *response.Writer, req *request.Request) {
-	log.Println("Inside handler")
-	log.Println("Request Targer", req.RequestLine.RequestTarget)
 	if after, ok := strings.CutPrefix(req.RequestLine.RequestTarget, "/httpbin"); ok {
-		log.Println("Http bin branch hit")
 		forwardTarget := after
 		url := fmt.Sprintf("https://httpbin.org/%s", forwardTarget)
 		res, err := http.Get(url)
@@ -46,10 +43,6 @@ func requestHandler(w *response.Writer, req *request.Request) {
 		readIdx := 0
 		for {
 			n, err := res.Body.Read(buff)
-			fmt.Println("Incoming Chunk Size Reads:", n)
-			fmt.Println("-----------Data:-----------")
-			fmt.Print(string(buff))
-			fmt.Println("\n----------------------")
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					_, err = w.WriteChunkedBodyDone()
@@ -61,7 +54,7 @@ func requestHandler(w *response.Writer, req *request.Request) {
 				fmt.Println(err)
 				return
 			}
-			n, err = w.WriteChunkedBody(buff)
+			n, err = w.WriteChunkedBody(buff[:n])
 			if err != nil {
 				fmt.Println(err)
 			}

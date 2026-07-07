@@ -5,6 +5,9 @@ import (
 	"strconv"
 )
 
+//NOTE: For future references
+
+/*
 func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	const chunkSize int64 = 1024
 	regNurseBytes := []byte("\r\n")
@@ -26,6 +29,31 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 		}
 		writtenIdx += n
 	}
+	return writtenIdx, nil
+}
+*/
+
+//NOTE: Actual Implementation
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	chunkSize := len(p)
+	regNurseBytes := []byte("\r\n")
+	chunkSizeHex := strconv.FormatInt(int64(chunkSize), 16)
+	chunkSizeLine := fmt.Appendf(nil, "%s\r\n", chunkSizeHex)
+
+	var writtenIdx int
+
+	n, err := w.Buf.Write(chunkSizeLine)
+	if err != nil {
+		return writtenIdx, fmt.Errorf("Error Writing chunk: %v", err)
+	}
+	writtenIdx += n
+	data := append(p, regNurseBytes...)
+	n, err = w.Buf.Write(data)
+	if err != nil {
+		return writtenIdx, fmt.Errorf("Error Writing chunk: %v", err)
+	}
+	writtenIdx += n
 	return writtenIdx, nil
 }
 
